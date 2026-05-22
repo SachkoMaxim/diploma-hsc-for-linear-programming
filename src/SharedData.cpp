@@ -71,7 +71,7 @@ void SharedData::putValuesIntoIdentityMatrix(int rowSize, int colSize, std::vect
 void SharedData::preprocess() {
     for (int i = 0; i < m; ++i) {
         if (constraintTypes[i] == ConstraintType::GREATEREQ) {
-            double* row = rowA(i);
+            double* row = colA(i);
             for (int j = 0; j < n; ++j) row[j] = -row[j];
             b[i] = -b[i];
             constraintTypes[i] = ConstraintType::LESSEREQ;
@@ -83,4 +83,14 @@ void SharedData::preprocess() {
 void SharedData::putValuesIntoA(std::vector<double> &A, double min, double max, uint32_t seed) {
     putValuesIntoMatrix(m, n, A, min, max, seed);
     preprocess();
+}
+
+void SharedData::saveScalar(double &scalar, std::vector<double> &vector, int i_pivot) {
+    scalar = vector[i_pivot];
+}
+
+void SharedData::saveRow(std::vector<double> &vector_copy, int i_pivot) {
+    const double* sourceRow = rowB_m1(i_pivot);
+
+    std::copy(sourceRow, sourceRow + m, vector_copy.begin());
 }

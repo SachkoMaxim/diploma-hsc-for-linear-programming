@@ -41,8 +41,8 @@ class SharedData {
         bool needsDualStart = false;
 
         // Швидкий доступ до рядків матриць
-        inline const double* rowA(int i) const { return A.data() + i * n; }
-        inline       double* rowA(int i)       { return A.data() + i * n; }
+        inline const double* colA(int i) const { return A.data() + i * n; }
+        inline       double* colA(int i)       { return A.data() + i * n; }
 
         inline const double* rowB(int i) const { return B.data() + i * m; }
         inline       double* rowB(int i)       { return B.data() + i * m; }
@@ -64,4 +64,7 @@ class SharedData {
         );
         void preprocess();
         void putValuesIntoA(std::vector<double> &A, double min, double max, uint32_t seed);
+
+        void saveScalar(double &scalar, std::vector<double> &vector, int i_pivot);
+        void saveRow(std::vector<double> &vector_copy, int i_pivot);
 };
