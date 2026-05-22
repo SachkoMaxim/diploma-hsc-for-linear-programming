@@ -1,18 +1,56 @@
 #include <iostream>
 
-// TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
+#include "src/SharedData.h"
+
+const int n = 4;
+const int m = 4;
+const int P = 4;
+
+const uint32_t SEED = 77;
+
+using namespace std;
 
 int main() {
-    // TIP Press <shortcut actionId="RenameElement"/> when your caret is at the <b>lang</b> variable name to see how CLion can help you rename it.
+
+    SharedData data;
+    data.initialise(n, m);
+
+    data.putValuesIntoVector(m, data.b, 1.0, 100.0, SEED);
+    data.putValuesIntoVector(n, data.c, 1.0, 50.0, SEED);
+    data.putValuesIntoVector(m, data.c_TB, 1.0, 100.0, SEED);
+    data.putValuesIntoVector(m, data.x_B, 1.0, 100.0, SEED);
+
+    data.putValuesIntoA(data.A, -20.0, 20.0, SEED);
+    data.putValuesIntoIdentityMatrix(m, m, data.B);
+    data.putValuesIntoIdentityMatrix(m, m, data.B_m1);
+
+    auto printVector = [](const string& name, const vector<double>& vec) {
+        cout << name << ": [ ";
+        for (double val : vec) cout << val << " ";
+        cout << "]\n";
+    };
+
+    auto printMatrix = [](const string& name, const vector<double>& mat, int rows, int cols) {
+        cout << name << ":\n";
+        for (int i = 0; i < rows; ++i) {
+            for (int j = 0; j < cols; ++j) {
+                cout << mat[i * cols + j] << "\t";
+            }
+            cout << "\n";
+        }
+    };
+
+    printVector("Vector b", data.b);
+    printVector("Vector c", data.c);
+    printVector("Vector c_TB", data.c_TB);
+    printVector("Vector x_B", data.x_B);
+    printMatrix("Matrix A", data.A, m, n);
+    printMatrix("Matrix B", data.B, m, m);
+    printMatrix("Identity Matrix B_m1", data.B_m1, m, m);
+    cout << "Needs Dual Start: " << (data.needsDualStart ? "YES" : "NO") << "\n";
 
     const auto lang = "C++";
     std::cout << "Hello and welcome to " << lang << "!\n";
 
-    for (int i = 1; i <= 5; i++) {
-        // TIP Press <shortcut actionId="Debug"/> to start debugging your code. We have set one <icon src="AllIcons.Debugger.Db_set_breakpoint"/> breakpoint for you, but you can always add more by pressing <shortcut actionId="ToggleLineBreakpoint"/>.
-        std::cout << "i = " << i << std::endl;
-    }
-
     return 0;
-    // TIP See CLion help at <a href="https://www.jetbrains.com/help/clion/">jetbrains.com/help/clion/</a>. Also, you can try interactive lessons for CLion by selecting 'Help | Learn IDE Features' from the main menu.
 }
