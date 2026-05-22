@@ -13,6 +13,7 @@ find_package(TBB REQUIRED)
 
 add_executable(diploma_hsc_for_linear_programming main.cpp
         src/SharedData.cpp
+        src/SimplexMath.h
 )
 
 target_include_directories(diploma_hsc_for_linear_programming PRIVATE src)

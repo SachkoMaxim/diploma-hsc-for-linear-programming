@@ -56,9 +56,7 @@ void SharedData::putValuesIntoMatrix(
 }
 
 void SharedData::putValuesIntoIdentityMatrix(int rowSize, int colSize, std::vector<double> &matrix) {
-    if (rowSize != colSize) {
-        return;
-    }
+    if (rowSize != colSize) return;
 
     std::fill(matrix.begin(), matrix.end(), 0.0);
 
@@ -71,7 +69,7 @@ void SharedData::putValuesIntoIdentityMatrix(int rowSize, int colSize, std::vect
 void SharedData::preprocess() {
     for (int i = 0; i < m; ++i) {
         if (constraintTypes[i] == ConstraintType::GREATEREQ) {
-            double* row = colA(i);
+            double* row = rowA(i);
             for (int j = 0; j < n; ++j) row[j] = -row[j];
             b[i] = -b[i];
             constraintTypes[i] = ConstraintType::LESSEREQ;
@@ -93,4 +91,12 @@ void SharedData::saveRow(std::vector<double> &vector_copy, int i_pivot) {
     const double* sourceRow = rowB_m1(i_pivot);
 
     std::copy(sourceRow, sourceRow + m, vector_copy.begin());
+}
+
+void SharedData::changeElement(std::vector<double> &vector, int i_pivot, int j_pivot) {
+    int ip = i_pivot;
+    int jp = j_pivot;
+    // Вхідна змінна jp входить у базис замість вихідної ip
+    basisIdx[ip] = jp;
+    vector[ip] = (jp < n) ? c[jp] : 0.0;
 }
