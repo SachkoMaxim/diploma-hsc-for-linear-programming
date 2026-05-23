@@ -66,21 +66,31 @@ void SharedData::putValuesIntoIdentityMatrix(int rowSize, int colSize, std::vect
     for (int i = 0; i < totalElements; i += step) matrix[i] = 1.0;
 }
 
-void SharedData::preprocess() {
+void SharedData::preprocessA() {
     for (int i = 0; i < m; ++i) {
         if (constraintTypes[i] == ConstraintType::GREATEREQ) {
             double* row = rowA(i);
             for (int j = 0; j < n; ++j) row[j] = -row[j];
+        }
+    }
+}
+
+void SharedData::preprocessB() {
+    for (int i = 0; i < m; ++i) {
+        if (constraintTypes[i] == ConstraintType::GREATEREQ) {
             b[i] = -b[i];
-            constraintTypes[i] = ConstraintType::LESSEREQ;
-            if (b[i] < 0.0) needsDualStart = true;
         }
     }
 }
 
 void SharedData::putValuesIntoA(std::vector<double> &A, double min, double max, uint32_t seed) {
     putValuesIntoMatrix(m, n, A, min, max, seed);
-    preprocess();
+    preprocessA();
+}
+
+void SharedData::putValuesIntoB(std::vector<double> &b, double min, double max, uint32_t seed) {
+    putValuesIntoVector(m, b, min, max, seed);
+    preprocessB();
 }
 
 void SharedData::saveScalar(double &scalar, std::vector<double> &vector, int i_pivot) {

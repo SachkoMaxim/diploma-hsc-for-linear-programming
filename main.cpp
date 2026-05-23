@@ -1,7 +1,7 @@
 #include <iostream>
 
-#include "ConsoleVisualizer.h"
-#include "src/SimplexMethod.h"
+#include "src/ConsoleVisualizer.h"
+#include "src/ParallelSimplex.h"
 #include "src/SharedData.h"
 
 const int n = 5;
@@ -19,7 +19,7 @@ int main() {
     SharedData data;
     data.initialise(n, m);
 
-    SimplexMethod solver(data, P, MAX_ITER, SEED);
+    ParallelSimplex solver(data, P, MAX_ITER, SEED);
     SimplexStatus status = solver.solve();
 
     std::cout << "n = " << n << ", m = " << m << ", P = " << P

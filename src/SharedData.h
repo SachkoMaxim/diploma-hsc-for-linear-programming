@@ -62,8 +62,10 @@ class SharedData {
         void putValuesIntoIdentityMatrix(
             int rowSize, int colSize, std::vector<double> &matrix
         );
-        void preprocess();
+        void preprocessA();
+        void preprocessB();
         void putValuesIntoA(std::vector<double> &A, double min, double max, uint32_t seed);
+        void putValuesIntoB(std::vector<double> &b, double min, double max, uint32_t seed);
 
         void saveScalar(double &scalar, std::vector<double> &vector, int i_pivot);
         void saveRow(std::vector<double> &vector_copy, int i_pivot);
