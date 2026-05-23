@@ -2,7 +2,6 @@
 
 #include "SharedData.h"
 
-// Статус завершення алгоритму
 enum class SimplexStatus {
     OPTIMAL,      // знайдено оптимальний розв'язок
     UNBOUNDED,    // задача необмежена
@@ -13,9 +12,10 @@ enum class SimplexStatus {
 class SimplexMethod {
     public:
         SimplexMethod(SharedData &data,
-                    int numThreads = 4,
-                    int maxIter = 100000,
-                    uint32_t seed = 1);
+            int numThreads = 4,
+            int maxIter = 100000,
+            uint32_t seed = 1
+        );
 
         ~SimplexMethod() = default;
 
@@ -40,4 +40,8 @@ class SimplexMethod {
         double result = 0.0;
         int iterations = 0;
         std::vector<double> equationSolution;
+
+        void computeReducedCosts(std::vector<double> &c_j);
+        void performBasisUpdate(const std::vector<double> &d, int ip, int jp);
+        int harrisRatioPivot(const std::vector<double> &d) const;
 };

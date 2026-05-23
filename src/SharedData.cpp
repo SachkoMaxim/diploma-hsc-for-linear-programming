@@ -27,7 +27,7 @@ void SharedData::initialise(int n_vars, int m_constraints) {
     std::iota(basisIdx.begin(), basisIdx.end(), n);
 
     constraintTypes.resize(m, ConstraintType::LESSEREQ);
-    //constraintTypes[1] = ConstraintType::GREATEREQ;
+    constraintTypes[1] = ConstraintType::GREATEREQ;
 }
 
 void SharedData::putValuesIntoVector(

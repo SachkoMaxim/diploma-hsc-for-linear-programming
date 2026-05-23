@@ -4,11 +4,11 @@
 #include "src/SimplexMethod.h"
 #include "src/SharedData.h"
 
-const int n = 3;
-const int m = 3;
+const int n = 5;
+const int m = 4;
 const int P = 4;
 
-const uint32_t SEED = 1;
+const uint32_t SEED = 77;
 
 using namespace std;
 
