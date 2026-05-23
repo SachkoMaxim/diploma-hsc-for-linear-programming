@@ -17,7 +17,10 @@ SimplexStatus SimplexMethod::solve() {
     data.putValuesIntoVector(data.m, data.b, 1.0, 50.0, seed);
     data.putValuesIntoVector(data.n, data.c, 1.0, 100.0, seed);
     std::fill(data.c_TB.begin(), data.c_TB.end(), 0.0);
-    data.x_B = data.b;
+    for (int i = 0; i < data.m; ++i) {
+        data.b[i] += 1e-11;
+    }
+    data.x_B = data.b; // Оновлюємо початковий базис
 
     data.putValuesIntoA(data.A, -20.0, 20.0, seed);
     data.putValuesIntoIdentityMatrix(data.m, data.m, data.B);
@@ -45,7 +48,7 @@ SimplexStatus SimplexMethod::solve() {
 
         // j_pivot = min(nA - c)
         j_pivot = -1;
-        double min_delta = 0.0;
+        double min_delta = -1e-9;
         SimplexMath::MultiplyVectorAndMatrix(v, data.A, c_j, data.m, data.n);
 
         for (int j = 0; j < data.n; j++) {
@@ -65,23 +68,45 @@ SimplexStatus SimplexMethod::solve() {
         // d = B_m1 * A(j_pivot)
         SimplexMath::MultiplyMatrixAndColumn(data.B_m1, data.A, j_pivot, d, data.m, data.n);
 
-        // i_pivot = min(x_B/d)
+        // i_pivot = min(x_B/d) ЗА ПРАВИЛОМ ГАРРІСА
         i_pivot = -1;
-        double min_theta = std::numeric_limits<double>::max();
+        double harris_epsilon = 1e-7;
+        double min_pivot_step = std::numeric_limits<double>::max();
 
+        // ПРОХІД 1: Визначення максимально допустимиго кроку (max allowable pivot step)
         for (int i = 0; i < data.m; i++) {
             if (d[i] > 1e-9) {
-                double theta = data.x_B[i] / d[i];
-                if (theta < min_theta) {
-                    min_theta = theta;
-                    i_pivot = i;
+                // Дозволяємо x_B бути злегка від'ємним у межах похибки
+                double max_step = (data.x_B[i] + harris_epsilon) / d[i];
+                if (max_step < min_pivot_step) {
+                    min_pivot_step = max_step;
                 }
             }
         }
 
-        if (i_pivot == -1) {
+        // Якщо min_pivot_step не змінився, задача необмежена
+        if (min_pivot_step == std::numeric_limits<double>::max()) {
             std::cout << "Target function is unbounded.\n";
             return SimplexStatus::UNBOUNDED;
+        }
+
+        // ПРОХІД 2: Серед усіх рядків, що задовольняють min_pivot_step,
+        // вибір того, у якого НАЙБІЛЬШИЙ знаменник d[i] (для чисельної стабільності)
+        double max_d_val = -1.0;
+
+        for (int i = 0; i < data.m; i++) {
+            if (d[i] > 1e-9) {
+                double actual_step = data.x_B[i] / d[i];
+
+                // Перевірка, чи входить рядок у розширену зону допустимості
+                if (actual_step <= min_pivot_step) {
+                    // Вибір рядка з найбільшим d[i], щоб уникнути ділення на малі числа
+                    if (d[i] > max_d_val - 1e-9) {
+                        max_d_val = d[i];
+                        i_pivot = i;
+                    }
+                }
+            }
         }
 
         // c_TB(j_pivot) = c(j_pivot)
@@ -101,6 +126,10 @@ SimplexStatus SimplexMethod::solve() {
 
         // Оновлення x_B
         SimplexMath::UpdateVector(d, data.x_B_iPiv, data.d_ipRev, data.x_B, data.m, i_pivot);
+
+        ConsoleVisualizer::printVector("Vector x_B", data.x_B);
+        ConsoleVisualizer::printVector("Vector c_TB", data.c_TB);
+        ConsoleVisualizer::printMatrix("Identity Matrix B_m1", data.B_m1, data.m, data.m);
     }
 
     // Якщо вийшли з циклу по break (знайшли оптимальний розв'язок)
