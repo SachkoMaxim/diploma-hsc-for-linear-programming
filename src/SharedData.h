@@ -27,7 +27,7 @@ class SharedData {
         alignas(64) std::vector<double> B_m1_iPiv;  // рядок i_pivot матриці B_m1 розмір 1 x m
 
         // Матриці
-        alignas(64) std::vector<double> A;      // розмір m x n
+        alignas(64) std::vector<double> A_T;    // розмір n x m (транспонована A розміром m * n)
         alignas(64) std::vector<double> B;      // розмір m x m
         alignas(64) std::vector<double> B_m1;   // розмір m x m
 
@@ -41,8 +41,8 @@ class SharedData {
         bool needsDualStart = false;
 
         // Швидкий доступ до рядків матриць
-        inline const double* rowA(int i) const { return A.data() + i * n; }
-        inline       double* rowA(int i)       { return A.data() + i * n; }
+        inline const double* colA_T(int i) const { return A_T.data() + i * m; }
+        inline       double* colA_T(int i)       { return A_T.data() + i * m; }
 
         inline const double* rowB(int i) const { return B.data() + i * m; }
         inline       double* rowB(int i)       { return B.data() + i * m; }
@@ -62,9 +62,9 @@ class SharedData {
         void putValuesIntoIdentityMatrix(
             int rowSize, int colSize, std::vector<double> &matrix
         );
-        void preprocessA();
+        void preprocessA_T();
         void preprocessB();
-        void putValuesIntoA(std::vector<double> &A, double min, double max, uint32_t seed);
+        void putValuesIntoA_T(std::vector<double> &A, double min, double max, uint32_t seed);
         void putValuesIntoB(std::vector<double> &b, double min, double max, uint32_t seed);
 
         void saveScalar(double &scalar, std::vector<double> &vector, int i_pivot);

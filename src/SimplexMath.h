@@ -27,9 +27,8 @@ class SimplexMath {
             const std::vector<double> &vector, const std::vector<double> &matrix,
             std::vector<double> &result, int vectorSize, int resultSize
         ) {
-            for (int j = 0; j < resultSize; ++j) result[j] = 0.0;
-
             for (int i = 0; i < vectorSize; ++i) {
+                double sum = 0.0;
                 double vec_val = vector[i];
 
                 for (int j = 0; j < resultSize; ++j) {
@@ -38,19 +37,31 @@ class SimplexMath {
             }
         }
 
-        static inline void MultiplyMatrixAndColumn(
-            const std::vector<double> &matrix, const std::vector<double> &A, int j_pivot,
-            std::vector<double> &result, int m, int n
+        static inline void MultiplyVectorAndTransposedMatrix(
+            const std::vector<double> &vector, const std::vector<double> &matrix_T,
+            std::vector<double> &result, int vectorSize, int resultSize
         ) {
+            for (int j = 0; j < resultSize; ++j) {
+                double sum = 0.0;
+                const double* row_mT = matrix_T.data() + j * vectorSize;
+
+                for (int i = 0; i < vectorSize; ++i) sum += vector[i] * row_mT[i];
+
+                result[j] = sum;
+            }
+        }
+
+        static inline void MultiplyMatrixAndColumn(
+            const std::vector<double> &matrix, const std::vector<double> &A_T, int j_pivot,
+            std::vector<double> &result, int m
+        ) {
+            const double* col = A_T.data() + j_pivot * m;
+
             for (int i = 0; i < m; ++i) {
                 double sum = 0.0;
-                // Знаходження потрібного рядка
-                int row_offset = i * m;
+                const double* row = matrix.data() + i * m;
 
-                for (int j = 0; j < m; ++j) {
-                    // A[j * n + j_pivot] - елемент у рядку j та стовпці j_pivot матриці A
-                    sum += matrix[row_offset + j] * A[j * n + j_pivot];
-                }
+                for (int j = 0; j < m; ++j) sum += row[j] * col[j];
                 result[i] = sum;
             }
         }

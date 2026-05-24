@@ -1,5 +1,7 @@
 #pragma once
 
+#include <oneapi/tbb/task_arena.h>
+
 #include "SharedData.h"
 
 enum class SimplexStatus {
@@ -29,6 +31,7 @@ class ParallelSimplex {
         SharedData &data;
         int P;
         int maxIter;
+        mutable tbb::task_arena arena;
 
         uint32_t seed;
 
@@ -41,7 +44,10 @@ class ParallelSimplex {
         int iterations = 0;
         std::vector<double> equationSolution;
 
-        void computeReducedCosts(std::vector<double> &c_j);
+        void computeVectorV();
+        void computeJPivotForPrimal();
+        void computeJPivotForDual(const std::vector<double> &u);
+        void computeVectorD(std::vector<double> &d);
         void performBasisUpdate(const std::vector<double> &d, int ip, int jp);
         int harrisRatioPivot(const std::vector<double> &d) const;
 };

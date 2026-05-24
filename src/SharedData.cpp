@@ -3,6 +3,8 @@
 #include <random>
 #include <numeric>
 
+#include "ConsoleVisualizer.h"
+
 void SharedData::initialise(int n_vars, int m_constraints) {
     n = n_vars;
     m = m_constraints;
@@ -19,9 +21,9 @@ void SharedData::initialise(int n_vars, int m_constraints) {
     B_m1_iPiv.resize(m, 0.0);       // розмір m
 
     // Виділення пам'яті під одновимірні матриці
-    A.resize(m * n, 0.0);           // розмір m x n
-    B.resize(m * m, 0.0);           // розмір m x m
-    B_m1.resize(m * m, 0.0);        // розмір m x m
+    A_T.resize(n * m, 0.0);     // розмір n x m
+    B.resize(m * m, 0.0);       // розмір m x m
+    B_m1.resize(m * m, 0.0);    // розмір m x m
 
     basisIdx.resize(m);
     std::iota(basisIdx.begin(), basisIdx.end(), n);
@@ -66,11 +68,10 @@ void SharedData::putValuesIntoIdentityMatrix(int rowSize, int colSize, std::vect
     for (int i = 0; i < totalElements; i += step) matrix[i] = 1.0;
 }
 
-void SharedData::preprocessA() {
+void SharedData::preprocessA_T() {
     for (int i = 0; i < m; ++i) {
         if (constraintTypes[i] == ConstraintType::GREATEREQ) {
-            double* row = rowA(i);
-            for (int j = 0; j < n; ++j) row[j] = -row[j];
+            for (int j = 0; j < n; ++j) A_T[j * m + i] = -A_T[j * m + i];
         }
     }
 }
@@ -83,9 +84,9 @@ void SharedData::preprocessB() {
     }
 }
 
-void SharedData::putValuesIntoA(std::vector<double> &A, double min, double max, uint32_t seed) {
-    putValuesIntoMatrix(m, n, A, min, max, seed);
-    preprocessA();
+void SharedData::putValuesIntoA_T(std::vector<double> &A, double min, double max, uint32_t seed) {
+    putValuesIntoMatrix(n, m, A, min, max, seed);
+    preprocessA_T();
 }
 
 void SharedData::putValuesIntoB(std::vector<double> &b, double min, double max, uint32_t seed) {
