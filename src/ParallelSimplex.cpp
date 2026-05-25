@@ -22,42 +22,35 @@ SimplexStatus ParallelSimplex::solve() {
         // Отримання номеру потоку
         T_id = omp_get_thread_num();
 
-        // Виведення інформації про початок роботи потоку
 #pragma omp critical
-        {
-            std::cout << "Task T" << T_id + 1 << " is started\n";
-        }
+        { std::cout << "Task T" << T_id + 1 << " is started\n"; }
 
         // Введення даних
         switch (T_id)
         {
-            case 0: // T1: Введення A
-                data.putValuesIntoA_T(data.A_T, -20.0, 20.0, seed);
-                break;
-            case 1: // T2: Введення b, c, c_TB, x_B
+            // T1: Введення A
+            case 0: data.putValuesIntoA_T(data.A_T, -20.0, 20.0, seed); break;
+            // T2: Введення b, c, c_TB, x_B
+            case 1:
                 data.putValuesIntoB(data.b, 1.0, 50.0, seed);
                 data.putValuesIntoVector(data.n, data.c, 1.0, 100.0, seed);
                 std::fill(data.c_TB.begin(), data.c_TB.end(), 0.0);
 
                 for (int i = 0; i < data.m; ++i) data.b[i] += 1e-11;
                 break;
-            case 2: // T3: Введення B
-                data.putValuesIntoIdentityMatrix(data.m, data.m, data.B);
-                break;
-            case 3: // T4: Введення B_m1
-                data.putValuesIntoIdentityMatrix(data.m, data.m, data.B_m1);
-                break;
-            default:
-                break;
+            // T3: Введення B
+            case 2: data.putValuesIntoIdentityMatrix(data.m, data.m, data.B);    break;
+            // T4: Введення B_m1
+            case 3: data.putValuesIntoIdentityMatrix(data.m, data.m, data.B_m1); break;
+            default: break;
         }
 
-        // Бар'єр B1 для синхронізації по введенню даних
+        // Бар'єр B1: синхронізація після введення даних усіма задачами
 #pragma omp barrier
 
 #pragma omp single
         {
-            data.x_B = data.b; // Оновлюємо початковий базис
-            // Скидаємо прапорець і аналізуємо знаки спільно з оновленням типів обмежень
+            data.x_B = data.b;
             data.needsDualStart = false;
             for (int i = 0; i < data.m; ++i) {
                 if (data.b[i] < 0.0) data.needsDualStart = true;
@@ -79,31 +72,34 @@ SimplexStatus ParallelSimplex::solve() {
     std::vector<double> d(data.m, 0.0);
     std::vector<double> u(data.n, 0.0);
 
-    // Дуальна частина (Прибирання від'ємних b / x_B)
+    // Дуальна фаза: прибирання від'ємних x_B[i]
     if (data.needsDualStart) {
-        // Зберігання оригінального вектора цілей і створення штучного нульового базису
         std::vector<double> original_c = data.c;
-        std::fill(data.c.begin(), data.c.end(), 0.0); // Тимчасово анулюються ціни
+        std::fill(data.c.begin(), data.c.end(), 0.0); // тимчасово нульова цільова функція
 
         while (iterations < maxIter) {
             ++iterations;
 
-            // Вибір i_pivot за рядком з мінімальним від'ємним x_B[i]
             i_pivot = computeIPivotForDual();
-
             if (i_pivot == -1) {
                 std::cout << "Dual Phase: Feasible basis found in " << iterations << " iterations.\n";
                 break;
             }
 
-            // u = рядок i_pivot матриці B_m1 * A
+            // u = B_m1[i_pivot] * A
             data.saveRow(data.B_m1_iPiv, i_pivot);
-            SimplexMath::MultiplyVectorAndTransposedMatrix(data.B_m1_iPiv, data.A_T, u, data.m, data.n);
+            SimplexMath::MultiplyRowAndTransposedMatrix(data.B_m1_iPiv, data.A_T, u, data.m, data.n);
 
-            // Обчислення1-4 відносно ШТУЧНОЇ (нульової) цільової функції;
+            // Обчислення1-4: v та j_pivot для двоїстого критерію
             arena.execute([&]() {
                 computeVectorV();
-                computeJPivotForDual(u);
+                j_pivot = computeJPivot(
+                    { std::numeric_limits<double>::max(), -1 },
+                    [&](int j, double v_Aj) -> std::pair<bool, double> {
+                        if (u[j] >= -1e-9) return { false, 0.0 };
+                        return { true, std::abs((v_Aj - data.c[j]) / u[j]) };
+                    }
+                );
             });
 
             if (j_pivot == -1) {
@@ -111,34 +107,37 @@ SimplexStatus ParallelSimplex::solve() {
                 return SimplexStatus::INFEASIBLE;
             }
 
-            // Обчислення5
-            arena.execute([&]() {
-                // Обчислення5
-                computeVectorD(d);
-            });
+            // Обчислення5: d = B^-1 * A[j_pivot]
+            computeVectorD(d);
 
-            // Обчислення8-12
+            // Обчислення8-12: оновлення базису
             performBasisUpdate(d, i_pivot, j_pivot);
         }
 
-        // Відновлення оригінальної цільової функції
         data.c = original_c;
 
-#pragma omp parallel for
+        // Відновлення c_TB після повернення оригінальної цільової функції
+#pragma omp parallel for schedule(static)
         for (int i = 0; i < data.m; ++i) {
-            int idx = data.basisIdx[i];
+            const int idx = data.basisIdx[i];
             data.c_TB[i] = (idx < data.n) ? data.c[idx] : 0.0;
         }
     }
 
-    // Пряма частина (Виведення задачі до Максимуму)
+    // Пряма фаза: рух до максимуму цільової функції
     while (iterations < maxIter) {
         ++iterations;
 
-        // Обчислення1-4
+        // Обчислення1-4: v та j_pivot для прямого критерію
         arena.execute([&]() {
             computeVectorV();
-            computeJPivotForPrimal();
+            j_pivot = computeJPivot(
+                { -1e-9, -1 },
+                [&](int j, double v_Aj) -> std::pair<bool, double> {
+                    const double delta = v_Aj - data.c[j];
+                    return { delta < -1e-9, delta };
+                }
+            );
         });
 
         if (j_pivot == -1) {
@@ -147,19 +146,16 @@ SimplexStatus ParallelSimplex::solve() {
         }
 
         // Обчислення5 d = B_m1 * A(j_pivot)н
-        arena.execute([&]() {
-            computeVectorD(d);
-        });
+        computeVectorD(d);
 
-        // Обчислення6-7 ЗА ПРАВИЛОМ ГАРРІСА
+        // Обчислення6-7: вибір i_pivot за правилом Гарріса
         i_pivot = harrisRatioPivot(d);
-
         if (i_pivot == -1) {
             std::cout << "Target function is unbounded.\n";
             return SimplexStatus::UNBOUNDED;
         }
 
-        // Обчислення8-12
+        // Обчислення8-12: оновлення базису
         performBasisUpdate(d, i_pivot, j_pivot);
 
         ConsoleVisualizer::printVector("Vector x_B", data.x_B);
@@ -167,225 +163,172 @@ SimplexStatus ParallelSimplex::solve() {
         ConsoleVisualizer::printMatrix("Identity Matrix B_m1", data.B_m1, data.m, data.m);
     }
 
-    // Якщо вийшли з циклу по break (знайшли оптимальний розв'язок)
-    if (iterations < maxIter) {
-        std::fill(equationSolution.begin(), equationSolution.end(), 0.0);
-        for (int i = 0; i < data.m; ++i) {
-            int idx = data.basisIdx[i];
-            if (idx < data.n) equationSolution[idx] = data.x_B[i];
-        }
-
-        result = 0.0;
-
-#pragma omp simd reduction(+:result)
-        for (int j = 0; j < data.n; ++j) {
-            result += data.c[j] * equationSolution[j];
-        }
-
-        return SimplexStatus::OPTIMAL;
+    if (iterations >= maxIter) {
+        std::cout << "Iteration limit reached.\n";
+        return SimplexStatus::MAX_ITER;
     }
 
-    std::cout << "Iteration limit reached.\n";
-    return SimplexStatus::MAX_ITER;
+    // Збір розв'язку
+    std::fill(equationSolution.begin(), equationSolution.end(), 0.0);
+    for (int i = 0; i < data.m; ++i) {
+        const int idx = data.basisIdx[i];
+        if (idx < data.n) equationSolution[idx] = data.x_B[i];
+    }
+
+    result = 0.0;
+#pragma omp simd reduction(+:result)
+    for (int j = 0; j < data.n; ++j) {
+        result += data.c[j] * equationSolution[j];
+    }
+
+    return SimplexStatus::OPTIMAL;
 }
 
 void ParallelSimplex::computeVectorV() {
     v = tbb::parallel_reduce(
-        tbb::blocked_range<int>(0, data.m), // Діапазон рядків H
-        std::vector<double>(data.m, 0.0),   // Ініціалізація локального vi
-        // Обчислення1: v = c_TBн * B_m1н
+        tbb::blocked_range<int>(0, data.m),
+        std::vector<double>(data.m, 0.0),
+        // Обчислення1: vi = c_TBн * B_m1н  (локальний внесок блоку рядків H)
         [&](const tbb::blocked_range<int> &r, std::vector<double> local_v) {
             for (int i = r.begin(); i != r.end(); ++i) {
-                double c_val = data.c_TB[i];
+                const double c_val = data.c_TB[i];
                 if (std::abs(c_val) < 1e-12) continue;
-
+                const double* row = data.B_m1.data() + i * data.m;
+#pragma omp simd
                 for (int j = 0; j < data.m; ++j) {
-                    local_v[j] += c_val * data.B_m1[i * data.m + j];
+                    local_v[j] += c_val * row[j];
                 }
             }
             return local_v;
         },
         // Обчислення2: v = v + vi (КД1)
-        [](std::vector<double> main_v, const std::vector<double> &local_v) {
-            for (size_t i = 0; i < main_v.size(); ++i) main_v[i] += local_v[i];
-            return main_v;
+        [](std::vector<double> a, const std::vector<double> &b) {
+#pragma omp simd
+            for (size_t i = 0; i < a.size(); ++i) a[i] += b[i];
+            return a;
         }
     );
 }
 
-void ParallelSimplex::computeJPivotForPrimal() {
-    j_pivot = -1;
-    std::pair<double, int> identity_j = { -1e-9, -1 };
+template<typename InnerFn>
+int ParallelSimplex::computeJPivot(std::pair<double, int> identity, InnerFn&& innerFn) {
+    // Спільна join-лямбда для обох варіантів
+    //      .first  = чи є цей стовпець кандидатом
+    //      .second = значення для порівняння (менше - краще)
+    auto join = [](std::pair<double, int> a, std::pair<double, int> b) {
+        if (a.second == -1) return b;
+        if (b.second == -1) return a;
+        if (a.first < b.first) return a;
+        if (b.first < a.first) return b;
+        return (a.second < b.second) ? a : b; // правило Бленда при рівних значеннях
+    };
 
-    j_pivot = tbb::parallel_reduce(
+    return tbb::parallel_reduce(
         tbb::blocked_range<int>(0, data.n),
-        identity_j,
+        identity,
         // Обчислення3: ji = min(v * Aн - cн)
-        [&](const tbb::blocked_range<int>& r, std::pair<double, int> local) {
+        // Обчислення3: локальний мінімум у піддіапазоні стовпців
+        [&](const tbb::blocked_range<int> &r, std::pair<double, int> local) {
             for (int j = r.begin(); j < r.end(); ++j) {
                 double v_Aj = 0.0;
-                const int col_offset = j * data.m;
-
+                const double* col = data.A_T.data() + j * data.m;
+#pragma omp simd reduction(+:v_Aj)
                 for (int i = 0; i < data.m; ++i) {
-                    v_Aj += v[i] * data.A_T[col_offset + i];
+                    v_Aj += v[i] * col[i];
                 }
 
-                double delta = v_Aj - data.c[j];
+                auto [is_candidate, value] = innerFn(j, v_Aj);
+                if (!is_candidate) continue;
 
-                if (delta < local.first) {
-                    local.first = delta;
-                    local.second = j;
-                }
-                else if (std::abs(delta - local.first) < 1e-11 && local.second != -1 && j < local.second) {
-                    local.second = j;
-                }
-            }
-            return local;
-        },
-        // Обчислення4: j_pivot = min(j_pivot, ji) (КД2)
-        [](std::pair<double, int> a, std::pair<double, int> b) {
-            if (a.second == -1) return b;
-            if (b.second == -1) return a;
-
-            if (a.first < b.first) return a;
-            if (b.first < a.first) return b;
-
-            // Якщо дельти рівні, то вибір ведучого j_pivot за правилом Бленда / абсолютного мінімуму
-            return (a.second < b.second) ? a : b;
-        }
-    ).second;
-}
-
-void ParallelSimplex::computeJPivotForDual(const std::vector<double> &u) {
-    j_pivot = -1;
-    std::pair<double, int> identity_dual = { std::numeric_limits<double>::max(), -1 };
-
-    this->j_pivot = tbb::parallel_reduce(
-        tbb::blocked_range<int>(0, data.n),
-        identity_dual,
-        // Лямбда 1: Обчислення локального мінімуму u в піддіапазоні стовпців
-        [&](const tbb::blocked_range<int>& r, std::pair<double, int> local) {
-            for (int j = r.begin(); j < r.end(); ++j) {
-                if (u[j] < -1e-9) {
-                    double v_Aj = 0.0;
-                    const int col_offset = j * data.m;
-
-                    for (int i = 0; i < data.m; ++i) {
-                        v_Aj += v[i] * data.A_T[col_offset + i];
-                    };
-
-                    double abs_theta = std::abs((v_Aj - data.c[j]) / u[j]);
-
-                    if (abs_theta < local.first) {
-                        local.first = abs_theta;
-                        local.second = j;
-                    }
-                    else if (std::abs(abs_theta - local.first) < 1e-11 && local.second != -1 && j < local.second) {
-                        local.second = j;
-                    }
+                if (value < local.first ||
+                   (std::abs(value - local.first) < 1e-11 && j < local.second))
+                {
+                    local = { value, j };
                 }
             }
             return local;
         },
-        [](std::pair<double, int> a, std::pair<double, int> b) {
-            if (a.second == -1) return b;
-            if (b.second == -1) return a;
-
-            if (a.first < b.first) return a;
-            if (b.first < a.first) return b;
-
-            // Якщо дельти рівні, то вибір ведучого j_pivot за правилом Бленда / абсолютного мінімуму
-            return (a.second < b.second) ? a : b;
-        }
+        join  // Обчислення4: j_pivot = min(j_pivot, ji) (КД2)
     ).second;
 }
 
 void ParallelSimplex::computeVectorD(std::vector<double> &d) {
     //Обчислення5 d = B_m1 * A(j_pivot)н
-    tbb::parallel_for(tbb::blocked_range<int>(0, data.m), [&](const tbb::blocked_range<int> &r) {
-        const double* col = data.A_T.data() + j_pivot * data.m;
-        for (int i = r.begin(); i < r.end(); ++i) {
-            double sum = 0.0;
-            const double* row = data.B_m1.data() + i * data.m;
-            for (int j = 0; j < data.m; ++j) {
-                sum += row[j] * col[j];
+    arena.execute([&]() {
+        tbb::parallel_for(tbb::blocked_range<int>(0, data.m),
+            [&](const tbb::blocked_range<int> &r) {
+                const double* col = data.A_T.data() + j_pivot * data.m;
+                for (int i = r.begin(); i < r.end(); ++i) {
+                    double sum = 0.0;
+                    const double* row = data.B_m1.data() + i * data.m;
+#pragma omp simd reduction(+:sum)
+                    for (int j = 0; j < data.m; ++j) {
+                        sum += row[j] * col[j];
+                    }
+                    d[i] = sum;
+                }
             }
-            d[i] = sum;
-        }
+        );
     });
 }
 
-void ParallelSimplex::performBasisUpdate(const std::vector<double> &d,
-                                       int ip, int jp)
-{
+void ParallelSimplex::performBasisUpdate(const std::vector<double> &d, int ip, int jp) {
     arena.execute([&]() {
         tbb::parallel_invoke(
             // Обчислення8 c_TB(j_pivot) = c(j_pivot)
             [&]() { data.changeElement(data.c_TB, ip, jp); },
-
             // Обчислення9 d_ipRev = 1 / d(i_pivot)
             [&]() { data.d_ipRev = 1.0 / d[ip]; },
-
             // Копіювання x_B_iPiv = x_B(i_pivot) (КД4)
             [&]() { data.saveScalar(data.x_B_iPiv, data.x_B, ip); },
-
             // Копіювання B_m1_iPiv = B_m1(i_pivot) (КД5)
-            [&]() { data.saveRow(data.B_m1_iPiv, ip); });
-        });
-
-    // Обчислення fн та Оновлення B_m1 з x_B
-    SimplexMath::UpdateMatrixAndVectorParallel(
-        data.B_m1_iPiv, d, data.d_ipRev, data.B_m1, data.x_B_iPiv, data.x_B, data.m, data.m, ip
-    );
-}
-
-int ParallelSimplex::harrisRatioPivot(const std::vector<double> &d) const
-{
-    constexpr double harris_epsilon = 1e-7;
-    double global_min_step = std::numeric_limits<double>::max();
-
-    arena.execute([&]() {
-        // ПРОХІД 1: Визначення максимально допустимиго кроку (max allowable pivot step)
-        global_min_step = tbb::parallel_reduce(
-            tbb::blocked_range<int>(0, data.m),
-            std::numeric_limits<double>::max(), // Стартове значення для пошуку мінімуму
-
-            // Обчислення6 ii = min((x_B)н / dн)
-            [&](const tbb::blocked_range<int>& r, double local_min_step) -> double {
-                for (int i = r.begin(); i < r.end(); ++i) {
-                    if (d[i] > 1e-9) {
-                        // Дозволяємо x_B бути злегка від'ємним у межах похибки
-                        local_min_step = std::min(local_min_step, (data.x_B[i] + harris_epsilon) / d[i]);
-                    }
-                }
-                return local_min_step;
-            },
-            // Обчислення7 i_pivot = min(i_pivot, ii) (КД3)
-            [](double a, double b) {
-                return std::min(a, b);
-            }
+            [&]() { data.saveRow(data.B_m1_iPiv, ip); }
         );
     });
 
-    // Перевірка на необмеженість задачі лінійного програмування
-    if (global_min_step == std::numeric_limits<double>::max()) return -1;
+    // Обчислення10-12: оновлення B^-1 та x_B "на місці"
+    SimplexMath::UpdateMatrixAndVectorParallel(
+        data.B_m1_iPiv, d, data.d_ipRev,
+        data.B_m1, data.x_B_iPiv, data.x_B,
+        data.m, data.m, ip
+    );
+}
 
-    int final_ip = -1;
+int ParallelSimplex::harrisRatioPivot(const std::vector<double> &d) const {
+    constexpr double harris_eps = 1e-7;
 
-    arena.execute([&]() {
-        // ПРОХІД 2: Вибір рядка з найбільшим знаменником d[i]
-        std::pair<double, int> identity_harris_2 = { -1.0, -1 }; // {max_d, ip}
-
-        auto best_row = tbb::parallel_reduce(
+    // Прохід 1: мінімально допустимий крок theta_min
+    const double theta_min = arena.execute([&]() {
+        return tbb::parallel_reduce(
             tbb::blocked_range<int>(0, data.m),
-            identity_harris_2,
+            std::numeric_limits<double>::max(),
+            // Обчислення6 ii = min((x_B)н / dн)
+            [&](const tbb::blocked_range<int>& r, double local_min) {
+                for (int i = r.begin(); i < r.end(); ++i) {
+                    if (d[i] > 1e-9)
+                        local_min = std::min(local_min, (data.x_B[i] + harris_eps) / d[i]);
+                }
+                return local_min;
+            },
+            [](double a, double b) { return std::min(a, b); }
+        );
+    });
+
+    if (theta_min == std::numeric_limits<double>::max()) return -1; // задача необмежена
+
+    // Прохід 2: серед рядків що задовольняють theta_min - обрати з найбільшим d[i]
+    const auto best = arena.execute([&]() {
+        return tbb::parallel_reduce(
+            tbb::blocked_range<int>(0, data.m),
+            std::pair<double, int>{ -1.0, -1 },
             // Обчислення6 ii = min((x_B)н / dн)
             [&](const tbb::blocked_range<int>& r, std::pair<double, int> local) {
                 for (int i = r.begin(); i < r.end(); ++i) {
-                    // Умова чисельної стабільності Гарріса
-                    if (d[i] > 1e-9 && data.x_B[i] / d[i] <= global_min_step && d[i] > local.first - 1e-9) {
-                        local.first = d[i];
-                        local.second = i;
+                    if (d[i] > 1e-9 &&
+                        data.x_B[i] / d[i] <= theta_min &&
+                        d[i] > local.first - 1e-9)
+                    {
+                        local = { d[i], i };
                     }
                 }
                 return local;
@@ -394,24 +337,21 @@ int ParallelSimplex::harrisRatioPivot(const std::vector<double> &d) const
             [](std::pair<double, int> a, std::pair<double, int> b) {
                 if (a.second == -1) return b;
                 if (b.second == -1) return a;
-                // Обираємо потік, який знайшов НАЙБІЛЬШИЙ знаменник d[i]
-                return (a.first > b.first) ? a : b;
+                return (a.first > b.first) ? a : b; // більший d[i] - чисельно стабільніший
             }
         );
-
-        final_ip = best_row.second;
     });
 
-    return final_ip;
+    return best.second;
 }
 
 #pragma omp declare reduction(min_loc : std::pair<double, int> : \
-omp_out = (omp_out.second == -1) ? omp_in : \
-(omp_in.second == -1) ? omp_out : \
-(omp_in.first < omp_out.first) ? omp_in : \
-(omp_out.first < omp_in.first) ? omp_out : \
-(omp_in.second < omp_out.second) ? omp_in : omp_out) \
-initializer(omp_priv = { -1e-9, -1 })
+    omp_out = (omp_out.second == -1) ? omp_in : \
+              (omp_in.second  == -1) ? omp_out : \
+              (omp_in.first < omp_out.first) ? omp_in : \
+              (omp_out.first < omp_in.first) ? omp_out : \
+              (omp_in.second < omp_out.second) ? omp_in : omp_out) \
+    initializer(omp_priv = { -1e-9, -1 })
 
 int ParallelSimplex::computeIPivotForDual() {
     std::pair<double, int> global_min = { -1e-9, -1 };
@@ -420,11 +360,9 @@ int ParallelSimplex::computeIPivotForDual() {
 #pragma omp parallel for reduction(min_loc: global_min)
     for (int i = 0; i < data.m; ++i) {
         if (data.x_B[i] < global_min.first) {
-            global_min.first = data.x_B[i];
-            global_min.second = i;
+            global_min = { data.x_B[i], i };
         }
     }
 
-    i_pivot = global_min.second;
-    return i_pivot;
+    return global_min.second;
 }

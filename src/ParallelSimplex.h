@@ -45,8 +45,10 @@ class ParallelSimplex {
         std::vector<double> equationSolution;
 
         void computeVectorV();
-        void computeJPivotForPrimal();
-        void computeJPivotForDual(const std::vector<double> &u);
+
+        template<typename InnerFn>
+        int computeJPivot(std::pair<double, int> identity, InnerFn&& innerFn);
+
         void computeVectorD(std::vector<double> &d);
         void performBasisUpdate(const std::vector<double> &d, int ip, int jp);
         int computeIPivotForDual();
