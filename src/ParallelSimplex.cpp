@@ -227,7 +227,6 @@ int ParallelSimplex::computeJPivot(std::pair<double, int> identity, InnerFn&& in
         tbb::blocked_range<int>(0, data.n),
         identity,
         // Обчислення3: ji = min(v * Aн - cн)
-        // Обчислення3: локальний мінімум у піддіапазоні стовпців
         [&](const tbb::blocked_range<int> &r, std::pair<double, int> local) {
             for (int j = r.begin(); j < r.end(); ++j) {
                 double v_Aj = 0.0;
@@ -240,10 +239,13 @@ int ParallelSimplex::computeJPivot(std::pair<double, int> identity, InnerFn&& in
                 auto [is_candidate, value] = innerFn(j, v_Aj);
                 if (!is_candidate) continue;
 
-                if (value < local.first ||
-                   (std::abs(value - local.first) < 1e-11 && j < local.second))
-                {
+                if (local.second == -1 || value < local.first) {
                     local = { value, j };
+                }
+                else if (std::abs(value - local.first) < 1e-11) {
+                    if (j < local.second) {
+                        local.second = j;
+                    }
                 }
             }
             return local;
