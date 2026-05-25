@@ -121,9 +121,11 @@ SimplexStatus ParallelSimplex::solve() {
 
             // Обчислення5
             arena.execute([&]() {
+                // Обчислення5
                 computeVectorD(d);
             });
 
+            // Обчислення8-12
             performBasisUpdate(d, i_pivot, j_pivot);
         }
 
@@ -156,7 +158,7 @@ SimplexStatus ParallelSimplex::solve() {
             computeVectorD(d);
         });
 
-        // Обчислення6-7 i_pivot = min(x_B/d) ЗА ПРАВИЛОМ ГАРРІСА
+        // Обчислення6-7 ЗА ПРАВИЛОМ ГАРРІСА
         i_pivot = harrisRatioPivot(d);
 
         if (i_pivot == -1) {
@@ -164,6 +166,7 @@ SimplexStatus ParallelSimplex::solve() {
             return SimplexStatus::UNBOUNDED;
         }
 
+        // Обчислення8-12
         performBasisUpdate(d, i_pivot, j_pivot);
 
         ConsoleVisualizer::printVector("Vector x_B", data.x_B);
@@ -301,6 +304,7 @@ void ParallelSimplex::computeJPivotForDual(const std::vector<double> &u) {
 }
 
 void ParallelSimplex::computeVectorD(std::vector<double> &d) {
+    //Обчислення5 d = B_m1 * A(j_pivot)н
     tbb::parallel_for(tbb::blocked_range<int>(0, data.m), [&](const tbb::blocked_range<int> &r) {
         const double* col = data.A_T.data() + j_pivot * data.m;
         for (int i = r.begin(); i < r.end(); ++i) {
@@ -317,23 +321,25 @@ void ParallelSimplex::computeVectorD(std::vector<double> &d) {
 void ParallelSimplex::performBasisUpdate(const std::vector<double> &d,
                                        int ip, int jp)
 {
-    // c_TB(j_pivot) = c(j_pivot)
-    data.changeElement(data.c_TB, ip, jp);
+    arena.execute([&]() {
+        tbb::parallel_invoke(
+            // Обчислення8 c_TB(j_pivot) = c(j_pivot)
+            [&]() { data.changeElement(data.c_TB, ip, jp); },
 
-    // d_ipRev = 1 / d(i_pivot)
-    data.d_ipRev = 1.0 / d[ip];
+            // Обчислення9 d_ipRev = 1 / d(i_pivot)
+            [&]() { data.d_ipRev = 1.0 / d[ip]; },
 
-    // x_B_iPiv = x_B(i_pivot)
-    data.saveScalar(data.x_B_iPiv, data.x_B, ip);
+            // Копіювання x_B_iPiv = x_B(i_pivot) (КД4)
+            [&]() { data.saveScalar(data.x_B_iPiv, data.x_B, ip); },
 
-    // B_m1_iPiv = B_m1(i_pivot)
-    data.saveRow(data.B_m1_iPiv, ip);
+            // Копіювання B_m1_iPiv = B_m1(i_pivot) (КД5)
+            [&]() { data.saveRow(data.B_m1_iPiv, ip); });
+        });
 
-    // Оновлення B_m1
-    SimplexMath::UpdateMatrix(data.B_m1_iPiv, d, data.d_ipRev, data.B_m1, data.m, data.m, ip);
-
-    // Оновлення x_B
-    SimplexMath::UpdateVector(d, data.x_B_iPiv, data.d_ipRev, data.x_B, data.m, ip);
+    // Обчислення fн та Оновлення B_m1 з x_B
+    SimplexMath::UpdateMatrixAndVectorParallel(
+        data.B_m1_iPiv, d, data.d_ipRev, data.B_m1, data.x_B_iPiv, data.x_B, data.m, data.m, ip
+    );
 }
 
 int ParallelSimplex::harrisRatioPivot(const std::vector<double> &d) const
@@ -357,7 +363,7 @@ int ParallelSimplex::harrisRatioPivot(const std::vector<double> &d) const
                 }
                 return local_min_step;
             },
-            // Обчислення7 i_pivot = min(i_pivot, ii)
+            // Обчислення7 i_pivot = min(i_pivot, ii) (КД3)
             [](double a, double b) {
                 return std::min(a, b);
             }
@@ -387,7 +393,7 @@ int ParallelSimplex::harrisRatioPivot(const std::vector<double> &d) const
                 }
                 return local;
             },
-            // Обчислення7 i_pivot = min(i_pivot, ii)
+            // Обчислення7 i_pivot = min(i_pivot, ii) (КД3)
             [](std::pair<double, int> a, std::pair<double, int> b) {
                 if (a.second == -1) return b;
                 if (b.second == -1) return a;
