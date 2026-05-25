@@ -17,7 +17,6 @@ ParallelSimplex::ParallelSimplex(SharedData &data_, int numThreads_, int maxIter
 SimplexStatus ParallelSimplex::solve() {
     int T_id;
 
-
 #pragma omp parallel num_threads(P) private(T_id) shared(data, seed)
     {
         // Отримання номеру потоку
@@ -90,14 +89,7 @@ SimplexStatus ParallelSimplex::solve() {
             ++iterations;
 
             // Вибір i_pivot за рядком з мінімальним від'ємним x_B[i]
-            i_pivot = -1;
-            double min_x_B = -1e-9;
-            for (int i = 0; i < data.m; ++i) {
-                if (data.x_B[i] < min_x_B) {
-                    min_x_B = data.x_B[i];
-                    i_pivot = i;
-                }
-            }
+            i_pivot = computeIPivotForDual();
 
             if (i_pivot == -1) {
                 std::cout << "Dual Phase: Feasible basis found in " << iterations << " iterations.\n";
@@ -132,6 +124,7 @@ SimplexStatus ParallelSimplex::solve() {
         // Відновлення оригінальної цільової функції
         data.c = original_c;
 
+#pragma omp parallel for
         for (int i = 0; i < data.m; ++i) {
             int idx = data.basisIdx[i];
             data.c_TB[i] = (idx < data.n) ? data.c[idx] : 0.0;
@@ -183,7 +176,11 @@ SimplexStatus ParallelSimplex::solve() {
         }
 
         result = 0.0;
-        for (int j = 0; j < data.n; ++j) result += data.c[j] * equationSolution[j];
+
+#pragma omp simd reduction(+:result)
+        for (int j = 0; j < data.n; ++j) {
+            result += data.c[j] * equationSolution[j];
+        }
 
         return SimplexStatus::OPTIMAL;
     }
@@ -406,4 +403,28 @@ int ParallelSimplex::harrisRatioPivot(const std::vector<double> &d) const
     });
 
     return final_ip;
+}
+
+#pragma omp declare reduction(min_loc : std::pair<double, int> : \
+omp_out = (omp_out.second == -1) ? omp_in : \
+(omp_in.second == -1) ? omp_out : \
+(omp_in.first < omp_out.first) ? omp_in : \
+(omp_out.first < omp_in.first) ? omp_out : \
+(omp_in.second < omp_out.second) ? omp_in : omp_out) \
+initializer(omp_priv = { -1e-9, -1 })
+
+int ParallelSimplex::computeIPivotForDual() {
+    std::pair<double, int> global_min = { -1e-9, -1 };
+
+    // Обчислення7 i_pivot = min(i_pivot, ii) (КД3)
+#pragma omp parallel for reduction(min_loc: global_min)
+    for (int i = 0; i < data.m; ++i) {
+        if (data.x_B[i] < global_min.first) {
+            global_min.first = data.x_B[i];
+            global_min.second = i;
+        }
+    }
+
+    i_pivot = global_min.second;
+    return i_pivot;
 }

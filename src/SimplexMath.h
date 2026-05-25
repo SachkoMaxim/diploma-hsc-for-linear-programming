@@ -41,11 +41,15 @@ class SimplexMath {
             const std::vector<double> &vector, const std::vector<double> &matrix_T,
             std::vector<double> &result, int vectorSize, int resultSize
         ) {
+#pragma omp parallel for schedule(static)
             for (int j = 0; j < resultSize; ++j) {
                 double sum = 0.0;
                 const double* row_mT = matrix_T.data() + j * vectorSize;
 
-                for (int i = 0; i < vectorSize; ++i) sum += vector[i] * row_mT[i];
+#pragma omp simd reduction(+:sum)
+                for (int i = 0; i < vectorSize; ++i) {
+                    sum += vector[i] * row_mT[i];
+                }
 
                 result[j] = sum;
             }
