@@ -3,6 +3,8 @@
 #include <vector>
 #include <iostream>
 
+#include "ParallelSimplex.h"
+
 class ConsoleVisualizer {
     public:
         // Універсальний друк будь-якого вектора double
@@ -20,6 +22,30 @@ class ConsoleVisualizer {
                     std::cout << mat[i * cols + j] << "\t";
                 }
                 std::cout << "\n";
+            }
+        }
+
+        // Виведення транспонованої матриці "на льоту" (без нової змінної)
+        static inline void printMatrixTransposed(
+            const std::string& name, const std::vector<double>& mat, int rows, int cols
+        ) {
+            std::cout << name << ":\n";
+            for (int i = 0; i < cols; ++i) {
+                for (int j = 0; j < rows; ++j) {
+                    std::cout << mat[j * cols + i] << "\t";
+                }
+                std::cout << "\n";
+            }
+        }
+
+        static inline void printSimplexStatus(const std::string& name, SimplexStatus s) {
+            std::cout << name << ": ";
+            switch (s) {
+                case SimplexStatus::OPTIMAL:    std::cout << "OPTIMAL\n";    break;
+                case SimplexStatus::UNBOUNDED:  std::cout << "UNBOUNDED\n";  break;
+                case SimplexStatus::INFEASIBLE: std::cout << "INFEASIBLE\n"; break;
+                case SimplexStatus::MAX_ITER:   std::cout << "MAX_ITER\n";   break;
+                default:                        std::cout << "UNKNOWN\n";    break;
             }
         }
 };

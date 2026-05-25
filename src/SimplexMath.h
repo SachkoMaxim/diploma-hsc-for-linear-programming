@@ -6,9 +6,9 @@ class SimplexMath {
     public:
         static inline void MultiplyRowAndTransposedMatrix(
             const std::vector<double> &row, const std::vector<double> &matrix_T,
-            std::vector<double> &result, int rowSize, int resultSize
+            std::vector<double> &result, int rowSize, int resultSize, int P
         ) {
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) num_threads(P)
             for (int j = 0; j < resultSize; ++j) {
                 double sum = 0.0;
                 const double* col = matrix_T.data() + j * rowSize;
@@ -25,9 +25,9 @@ class SimplexMath {
         static inline void UpdateMatrixAndVectorParallel(
             const std::vector<double> &piv_row, const std::vector<double> &d, const double scalar,
             std::vector<double> &matrix, const double x_B_piv, std::vector<double> &x_B,
-            int row, int col, int i_pivot
+            int row, int col, int i_pivot, int P
         ) {
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) num_threads(P)
             for (int i = 0; i < row; ++i) {
                 const int row_offset = i * col;
 

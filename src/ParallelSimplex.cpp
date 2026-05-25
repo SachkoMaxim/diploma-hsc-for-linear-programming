@@ -23,8 +23,6 @@ SimplexStatus ParallelSimplex::solve() {
         T_id = omp_get_thread_num();
 
 #pragma omp critical
-        { std::cout << "Task T" << T_id + 1 << " is started\n"; }
-
         // Введення даних
         switch (T_id)
         {
@@ -59,13 +57,6 @@ SimplexStatus ParallelSimplex::solve() {
         }
     }
 
-    ConsoleVisualizer::printVector("Vector b", data.b);
-    ConsoleVisualizer::printVector("Vector c", data.c);
-    ConsoleVisualizer::printVector("Vector c_TB", data.c_TB);
-    ConsoleVisualizer::printVector("Vector x_B", data.x_B);
-    ConsoleVisualizer::printMatrix("Matrix A_T", data.A_T, data.n, data.m);
-    ConsoleVisualizer::printMatrix("Matrix B", data.B, data.m, data.m);
-    ConsoleVisualizer::printMatrix("Identity Matrix B_m1", data.B_m1, data.m, data.m);
     std::cout << "Needs Dual Start: " << (data.needsDualStart ? "YES" : "NO") << "\n";
 
     iterations = 0;
@@ -88,7 +79,7 @@ SimplexStatus ParallelSimplex::solve() {
 
             // u = B_m1[i_pivot] * A
             data.saveRow(data.B_m1_iPiv, i_pivot);
-            SimplexMath::MultiplyRowAndTransposedMatrix(data.B_m1_iPiv, data.A_T, u, data.m, data.n);
+            SimplexMath::MultiplyRowAndTransposedMatrix(data.B_m1_iPiv, data.A_T, u, data.m, data.n, P);
 
             // Обчислення1-4: v та j_pivot для двоїстого критерію
             arena.execute([&]() {
@@ -117,7 +108,7 @@ SimplexStatus ParallelSimplex::solve() {
         data.c = original_c;
 
         // Відновлення c_TB після повернення оригінальної цільової функції
-#pragma omp parallel for schedule(static)
+#pragma omp parallel for schedule(static) num_threads(P)
         for (int i = 0; i < data.m; ++i) {
             const int idx = data.basisIdx[i];
             data.c_TB[i] = (idx < data.n) ? data.c[idx] : 0.0;
@@ -157,10 +148,6 @@ SimplexStatus ParallelSimplex::solve() {
 
         // Обчислення8-12: оновлення базису
         performBasisUpdate(d, i_pivot, j_pivot);
-
-        ConsoleVisualizer::printVector("Vector x_B", data.x_B);
-        ConsoleVisualizer::printVector("Vector c_TB", data.c_TB);
-        ConsoleVisualizer::printMatrix("Identity Matrix B_m1", data.B_m1, data.m, data.m);
     }
 
     if (iterations >= maxIter) {
@@ -292,7 +279,7 @@ void ParallelSimplex::performBasisUpdate(const std::vector<double> &d, int ip, i
     SimplexMath::UpdateMatrixAndVectorParallel(
         data.B_m1_iPiv, d, data.d_ipRev,
         data.B_m1, data.x_B_iPiv, data.x_B,
-        data.m, data.m, ip
+        data.m, data.m, ip, P
     );
 }
 
@@ -359,7 +346,7 @@ int ParallelSimplex::computeIPivotForDual() {
     std::pair<double, int> global_min = { -1e-9, -1 };
 
     // Обчислення7 i_pivot = min(i_pivot, ii) (КД3)
-#pragma omp parallel for reduction(min_loc: global_min)
+#pragma omp parallel for reduction(min_loc: global_min) num_threads(P)
     for (int i = 0; i < data.m; ++i) {
         if (data.x_B[i] < global_min.first) {
             global_min = { data.x_B[i], i };
