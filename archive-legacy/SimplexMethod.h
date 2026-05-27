@@ -1,6 +1,6 @@
 #pragma once
 
-#include "SharedData.h"
+#include "../src/SharedData.h"
 
 enum class SimplexStatus {
     OPTIMAL,      // знайдено оптимальний розв'язок

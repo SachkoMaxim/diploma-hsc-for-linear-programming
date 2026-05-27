@@ -1,9 +1,9 @@
-#include "SimplexMethod.h"
+#include "../src/SimplexMethod.h"
 
 #include <limits>
 
-#include "ConsoleVisualizer.h"
-#include "SimplexMath.h"
+#include "../src/ConsoleVisualizer.h"
+#include "../src/SimplexMath.h"
 
 SimplexMethod::SimplexMethod(SharedData &data_, int numThreads_, int maxIter_, uint32_t seed_)
     : data(data_), P(numThreads_), maxIter(maxIter_), seed(seed_)
