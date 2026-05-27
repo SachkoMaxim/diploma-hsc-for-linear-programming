@@ -3,8 +3,6 @@
 #include <random>
 #include <numeric>
 
-#include "ConsoleVisualizer.h"
-
 void SharedData::initialise(int n_vars, int m_constraints) {
     n = n_vars;
     m = m_constraints;
