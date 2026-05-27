@@ -1,10 +1,10 @@
 #include "ParallelSimplex.h"
 
 #include <limits>
+#include <iostream>
 #include <omp.h>
 #include <oneapi/tbb.h>
 
-#include "ConsoleVisualizer.h"
 #include "SimplexMath.h"
 
 ParallelSimplex::ParallelSimplex(SharedData &data_, int numThreads_, int maxIter_, uint32_t seed_)
