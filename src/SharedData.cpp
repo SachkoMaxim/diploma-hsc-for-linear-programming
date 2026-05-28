@@ -14,13 +14,13 @@ void SharedData::initialise(int n_vars, int m_constraints) {
 
     // Вектори
     b.assign(m, 0.0);
-    c.assign(n, 0.0);
+    c.assign(n + m, 0.0);
     c_TB.assign(m, 0.0);
     x_B.assign(m, 0.0);
     B_m1_iPiv.assign(m, 0.0);
 
     // Матриці
-    A_T.assign(static_cast<size_t>(n) * m, 0.0);
+    A_T.assign(static_cast<size_t>(n + m) * m, 0.0);
     B.assign(static_cast<size_t>(m) * m, 0.0);
     B_m1.assign(static_cast<size_t>(m) * m, 0.0);
 
@@ -63,6 +63,9 @@ void SharedData::preprocessA_T() {
         if (constraintTypes[i] == ConstraintType::GREATEREQ) {
             for (int j = 0; j < n; ++j)
                 A_T[j * m + i] = -A_T[j * m + i];
+            A_T[(n + i) * m + i] = 1.0;
+        } else {
+            A_T[(n + i) * m + i] = +1.0;
         }
     }
 }
