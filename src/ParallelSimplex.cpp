@@ -43,8 +43,10 @@ SimplexStatus ParallelSimplex::solve() {
     data.x_B = data.b;
     data.needsDualStart = false;
     for (int i = 0; i < data.m; ++i) {
-        if (data.b[i] < 0.0) data.needsDualStart = true;
-        break;
+        if (data.b[i] < 0.0) {
+            data.needsDualStart = true;
+            break;
+        }
     }
 
     std::cout << "Needs Dual Start: " << (data.needsDualStart ? "YES" : "NO") << "\n";
