@@ -13,12 +13,11 @@ enum class SimplexStatus {
 
 class ParallelSimplex {
     public:
-        ParallelSimplex(SharedData &data,
+        ParallelSimplex(SharedData& data,
             int numThreads = 4,
             int maxIter = 100000,
             uint32_t seed = 1
         );
-
         ~ParallelSimplex() = default;
 
         SimplexStatus solve();
@@ -28,11 +27,10 @@ class ParallelSimplex {
         const std::vector<double>& getEquationSolution() const { return equationSolution; }
 
     private:
-        SharedData &data;
+        SharedData& data;
         int P;
         int maxIter;
         mutable tbb::task_arena arena;
-
         uint32_t seed;
 
         alignas(64) std::vector<double> v;      // розмір 1 x m
@@ -40,8 +38,8 @@ class ParallelSimplex {
         int j_pivot{-1};
         int i_pivot{-1};
 
-        double result = 0.0;
-        int iterations = 0;
+        double result{0.0};
+        int iterations{0};
         std::vector<double> equationSolution;
 
         void computeVectorV();
@@ -49,8 +47,8 @@ class ParallelSimplex {
         template<typename InnerFn>
         int computeJPivot(std::pair<double, int> identity, InnerFn&& innerFn);
 
-        void computeVectorD(std::vector<double> &d);
-        void performBasisUpdate(const std::vector<double> &d, int ip, int jp);
-        int computeIPivotForDual();
-        int harrisRatioPivot(const std::vector<double> &d) const;
+        void computeVectorD(std::vector<double>& d);
+        void performBasisUpdate(const std::vector<double>& d, int ip, int jp);
+        int harrisRatioPivot(const std::vector<double>& d) const;
+        int computeIPivotForDual() const;
 };

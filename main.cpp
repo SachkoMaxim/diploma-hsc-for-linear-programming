@@ -1,5 +1,4 @@
 #include <iostream>
-#include <sstream>
 #include <chrono>
 
 #include "src/FileWriter.h"
@@ -7,62 +6,51 @@
 #include "src/ParallelSimplex.h"
 #include "src/SharedData.h"
 
-const int n = 5;
-const int m = 4;
-const int P = 4;
-
-const uint32_t SEED = 77;
-
-using namespace std;
+static constexpr int n = 5;
+static constexpr int m = 4;
+static constexpr int P = 4;
+static constexpr uint32_t SEED = 77;
+static constexpr int MAX_ITER = 100000;
 
 int main() {
-
-    const int MAX_ITER = 100000;
-
-    std::cout << "Program has started\n\n";
+    std::cout << "Program started\n\n";
 
     SharedData data;
     data.initialise(n, m);
 
     ParallelSimplex solver(data, P, MAX_ITER, SEED);
 
-    auto startTime = std::chrono::high_resolution_clock::now();
+    const auto startTime = std::chrono::high_resolution_clock::now();
     SimplexStatus status = solver.solve();
 
     // Виведення часу виконання
-    auto endTime = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+    const auto endTime = std::chrono::high_resolution_clock::now();
+    const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
 
-    cout << "\nProblem condition:\n";
-    std::cout << "n = " << n << ", m = " << m << ", P = " << P
-                      << ", (iter=" << solver.getIterationCount() << ")"
-                      << std::endl;
+    std::cout << "\nProblem: n=" << n << ", m=" << m << ", P=" << P
+              << ", iterations=" << solver.getIterationCount() << "\n";
 
-    bool is_large_problem = (n > 15 || m > 15);
+    const bool isLarge = (n > 15 || m > 15);
 
-    if (!is_large_problem) {
-        ConsoleVisualizer::printVector("Vector b", data.b);
-        ConsoleVisualizer::printVector("Vector c", data.c);
-        ConsoleVisualizer::printMatrixTransposed("Matrix A", data.A_T, data.n, data.m);
-
-        cout << "\nResults:\n";
-        ConsoleVisualizer::printSimplexStatus("Simplex Algorithm status", status);
-
+    if (!isLarge) {
+        ConsoleVisualizer::printVector("b", data.b);
+        ConsoleVisualizer::printVector("c", data.c);
+        ConsoleVisualizer::printMatrixTransposed("A", data.A_T, data.n, data.m);
+        std::cout << "\nResults:\n";
+        ConsoleVisualizer::printSimplexStatus("Status", status);
         if (status == SimplexStatus::OPTIMAL) {
             ConsoleVisualizer::printVector("x", solver.getEquationSolution());
-            std::cout << "Z = " << solver.getResult() << std::endl;
+            std::cout << "Z = " << solver.getResult() << "\n";
         } else {
-            std::cout << "[INFO] The final solution vector 'x' is missing due to the suboptimal status of the algorithm.\n";
+            std::cout << "[INFO] Solution vector unavailable (non-optimal status).\n";
         }
     } else {
-        cout << "\nResults (Large Problem Mode):\n";
-        ConsoleVisualizer::printSimplexStatus("Simplex Algorithm status", status);
-        if (status == SimplexStatus::OPTIMAL) {
-            std::cout << "Z = " << solver.getResult() << std::endl;
-        }
+        std::cout << "\nResults (large problem):\n";
+        ConsoleVisualizer::printSimplexStatus("Status", status);
+        if (status == SimplexStatus::OPTIMAL)
+            std::cout << "Z = " << solver.getResult() << "\n";
 
-        // Виклик функції запису у файл для великих даних
-        std::cout << "[FILE LOG] Writing data in file simplex_results.txt...\n";
+        std::cout << "[FILE LOG] Writing results to simplex_results.txt ...\n";
         FileWriter::saveLargeResultToFile(
             "simplex_results.txt", status, solver.getEquationSolution(), solver.getResult(),
             solver.getIterationCount(), n, m, P, data.b, data.c, data.A_T

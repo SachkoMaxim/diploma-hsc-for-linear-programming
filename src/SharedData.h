@@ -9,14 +9,19 @@ enum class ConstraintType : uint8_t {
     EQUAL = 2,      // =
 };
 
+struct alignas(64) PaddedScalar {
+    double value = 0.0;
+    char   _pad[56]{}; // доповнення до 64 байт
+};
+
 class SharedData {
     public:
         int n = 0;
         int m = 0;
 
         // Скаляри
-        double d_ipRev = 0.0;     // 1/d_iPiv
-        double x_B_iPiv = 0.0;    // змінна i_pivot вектора x_B
+        PaddedScalar d_ipRev;       // 1/d[i_pivot]
+        PaddedScalar x_B_iPiv;      // x_B[i_pivot] (копія перед оновленням)
 
         // Вектори
         alignas(64) std::vector<double> b;      // розмір m x 1
@@ -27,48 +32,46 @@ class SharedData {
         alignas(64) std::vector<double> B_m1_iPiv;  // рядок i_pivot матриці B_m1 розмір 1 x m
 
         // Матриці
-        alignas(64) std::vector<double> A_T;    // розмір n x m (транспонована A розміром m * n)
+        alignas(64) std::vector<double> A_T;    // розмір n x m (транспонована A розміром m x n)
         alignas(64) std::vector<double> B;      // розмір m x m
         alignas(64) std::vector<double> B_m1;   // розмір m x m
 
+        // Службові
         std::vector<int> basisIdx; // індекси базисних змінних (розмір m)
 
         std::vector<ConstraintType> constraintTypes;
+        bool needsDualStart = false;
 
         SharedData() = default;
         ~SharedData() = default;
 
-        bool needsDualStart = false;
-
-        // Швидкий доступ до рядків матриць
-        inline const double* colA_T(int i) const { return A_T.data() + i * m; }
-        inline       double* colA_T(int i)       { return A_T.data() + i * m; }
-
-        inline const double* rowB(int i) const { return B.data() + i * m; }
-        inline       double* rowB(int i)       { return B.data() + i * m; }
+        // Швидкий доступ до елементів матриць
+        inline const double* colA_T(int j) const { return A_T.data() + j * m; }
+        inline       double* colA_T(int j)       { return A_T.data() + j * m; }
 
         inline const double* rowB_m1(int i) const { return B_m1.data() + i * m; }
         inline       double* rowB_m1(int i)       { return B_m1.data() + i * m; }
 
-
         // Функції
-        void initialise(int n, int m);
+        void initialise(int n_vars, int m_constraints);
+
         void putValuesIntoVector(
-            int size, std::vector<double> &vector, double min, double max, uint32_t seed
+            int size, std::vector<double>& vec, double min, double max, uint32_t seed
         );
         void putValuesIntoMatrix(
-            int rowSize, int colSize, std::vector<double> &matrix, double min, double max, uint32_t seed
+            int rows, int cols, std::vector<double>& mat,
+            double min, double max, uint32_t seed
         );
-        void putValuesIntoIdentityMatrix(
-            int rowSize, int colSize, std::vector<double> &matrix
-        );
+        void putValuesIntoIdentityMatrix(int size, std::vector<double>& mat);
+
+        void putValuesIntoA_T(std::vector<double>& A, double min, double max, uint32_t seed);
+        void putValuesIntoB(std::vector<double>& b, double min, double max, uint32_t seed);
+
+        void saveScalar(double& scalar, const std::vector<double>& vec, int i_pivot);
+        void saveRow(std::vector<double>& vec_copy, int i_pivot);
+        void changeElement(std::vector<double>& vec, int i_pivot, int j_pivot);
+
+    private:
         void preprocessA_T();
         void preprocessB();
-        void putValuesIntoA_T(std::vector<double> &A, double min, double max, uint32_t seed);
-        void putValuesIntoB(std::vector<double> &b, double min, double max, uint32_t seed);
-
-        void saveScalar(double &scalar, std::vector<double> &vector, int i_pivot);
-        void saveRow(std::vector<double> &vector_copy, int i_pivot);
-
-        void changeElement(std::vector<double> &vector, int i_pivot, int j_pivot);
 };
