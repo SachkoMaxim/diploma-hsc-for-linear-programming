@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 4.2)
+cmake_minimum_required(VERSION 3.30)
 project(diploma_hsc_for_linear_programming)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -32,7 +32,7 @@ target_link_libraries(diploma_hsc_for_linear_programming PRIVATE
 )
 
 if(MSVC)
-    target_compile_options(diploma_hsc_for_linear_programming PRIVATE /arch:AVX2 /fp:fast)
+    target_compile_options(diploma_hsc_for_linear_programming PRIVATE /O2 /arch:AVX2 /fp:fast /Qpar)
 else()
-    target_compile_options(diploma_hsc_for_linear_programming PRIVATE -march=native -ffast-math)
+    target_compile_options(diploma_hsc_for_linear_programming PRIVATE -O3 -march=native -ffast-math)
 endif()
