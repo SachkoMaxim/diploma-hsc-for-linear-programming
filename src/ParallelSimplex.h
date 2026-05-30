@@ -51,4 +51,6 @@ class ParallelSimplex {
         void performBasisUpdate(const std::vector<double>& d, int ip, int jp);
         int harrisRatioPivot(const std::vector<double>& d) const;
         int computeIPivotForDual() const;
+
+        void restoreCTB();
 };
