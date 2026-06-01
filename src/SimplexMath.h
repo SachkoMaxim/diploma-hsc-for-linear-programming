@@ -12,7 +12,7 @@ class SimplexMath {
             for (int j = 0; j < resultSize; ++j) {
                 double sum = 0.0;
                 const double* col = matrix_T.data() + j * rowSize;
-#pragma omp simd reduction(+:sum)
+
                 for (int i = 0; i < rowSize; ++i)
                     sum += row[i] * col[i];
                 result[j] = sum;

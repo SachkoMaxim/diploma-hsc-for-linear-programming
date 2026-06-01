@@ -17,6 +17,7 @@ ParallelSimplex::ParallelSimplex(SharedData& data_, int numThreads_, int maxIter
 
 SimplexStatus ParallelSimplex::solve() {
     omp_set_nested(1);
+    omp_set_max_active_levels(2);
 
     SimplexStatus status = SimplexStatus::OPTIMAL;
 
@@ -238,7 +239,7 @@ void ParallelSimplex::computeVectorD(std::vector<double>& d) {
         for (int i = 0; i < data.m; ++i) {
             double sum = 0.0;
             const double* row = data.B_m1.data() + i * data.m;
-#pragma omp simd reduction(+:sum)
+
             for (int j = 0; j < data.m; ++j)
                 sum += row[j] * col[j];
             d[i] = sum;
