@@ -9,7 +9,7 @@ class SimplexMath {
         static inline void MultiplyRowAndTransposedMatrix(
             const std::vector<double>& row, const std::vector<double>& matrix_T,
             std::vector<double>& result, int rowSize, int resultSize,
-            const std::vector<tbb::task_arena>& inner_arenas
+            std::vector<tbb::task_arena>& inner_arenas
         ) {
             tbb::parallel_for(tbb::blocked_range<int>(0, resultSize), [&](const tbb::blocked_range<int>& r) {
 
@@ -40,7 +40,7 @@ class SimplexMath {
         static inline void UpdateMatrixAndVectorParallel(
             const std::vector<double>& piv_row, const std::vector<double>& d, const double scalar,
             std::vector<double>& matrix, const double x_B_piv, std::vector<double>& x_B,
-            int rows, int cols, int i_pivot, const std::vector<tbb::task_arena>& inner_arenas
+            int rows, int cols, int i_pivot, std::vector<tbb::task_arena>& inner_arenas
         ) {
             tbb::parallel_for(tbb::blocked_range<int>(0, rows), [&](const tbb::blocked_range<int>& r) {
 
