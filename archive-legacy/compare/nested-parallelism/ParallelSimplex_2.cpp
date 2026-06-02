@@ -13,6 +13,11 @@ ParallelSimplex::ParallelSimplex(SharedData& data_, int numThreads_, int maxIter
 {
     v.resize(data.m, 0.0);
     equationSolution.resize(data.n, 0.0);
+
+    inner_arenas.reserve(P);
+    for (int i = 0; i < P; ++i) {
+        inner_arenas.emplace_back(2);
+    }
 }
 
 SimplexStatus ParallelSimplex::solve() {
@@ -63,7 +68,7 @@ SimplexStatus ParallelSimplex::solve() {
                 // u = B_m1[i_pivot] * A
                 data.saveRow(data.B_m1_iPiv, i_pivot);
                 SimplexMath::MultiplyRowAndTransposedMatrix(
-                    data.B_m1_iPiv, data.A_T, u, data.m, data.n + data.m
+                    data.B_m1_iPiv, data.A_T, u, data.m, data.n + data.m, inner_arenas
                 );
 
                 // Обчислення1-4: v та j_pivot для двоїстого критерію
@@ -160,24 +165,32 @@ void ParallelSimplex::computeVectorV() {
         tbb::blocked_range<int>(0, data.m),
         std::vector<double>(data.m, 0.0),
         [&](const tbb::blocked_range<int>& r, std::vector<double> local_v) {
+
+            int th_idx = tbb::this_task_arena::current_thread_index();
+
             for (int i = r.begin(); i != r.end(); ++i) {
                 const double c_val = data.c_TB[i];
                 if (std::abs(c_val) < 1e-12) continue;
                 const double* row = data.B_m1.data() + i * data.m;
 
-                // Вкладений паралельний цикл для додавання елементів
-                tbb::parallel_for(tbb::blocked_range<int>(0, data.m), [&](const tbb::blocked_range<int>& inner_r) {
-                    for (int j = inner_r.begin(); j < inner_r.end(); ++j) {
-                        local_v[j] += c_val * row[j];
-                    }
+                inner_arenas[th_idx].execute([&]() {
+                    tbb::parallel_for(tbb::blocked_range<int>(0, data.m), [&](const tbb::blocked_range<int>& inner_r) {
+                        for (int j = inner_r.begin(); j < inner_r.end(); ++j) {
+                            local_v[j] += c_val * row[j];
+                        }
+                    });
                 });
             }
             return local_v;
         },
-        [](std::vector<double> a, const std::vector<double>& b) {
-            // Вкладений parallel_for навіть для редукції (злиття) векторів локальних результатів
-            tbb::parallel_for(tbb::blocked_range<int>(0, a.size()), [&](const tbb::blocked_range<int>& inner_r) {
-                for (size_t i = inner_r.begin(); i < inner_r.end(); ++i) a[i] += b[i];
+        [&](std::vector<double> a, const std::vector<double>& b) {
+
+            int th_idx = tbb::this_task_arena::current_thread_index();
+
+            inner_arenas[th_idx].execute([&]() {
+                tbb::parallel_for(tbb::blocked_range<int>(0, a.size()), [&](const tbb::blocked_range<int>& inner_r) {
+                    for (size_t i = inner_r.begin(); i < inner_r.end(); ++i) a[i] += b[i];
+                });
             });
             return a;
         }
@@ -198,22 +211,27 @@ int ParallelSimplex::computeJPivot(std::pair<double, int> identity, InnerFn&& in
         tbb::blocked_range<int>(0, data.n + data.m),
         identity,
         [&](const tbb::blocked_range<int>& r, std::pair<double, int> local) {
+
+            int th_idx = tbb::this_task_arena::current_thread_index();
+
             for (int j = r.begin(); j < r.end(); ++j) {
                 double v_Aj = 0.0;
 
                 if (j < data.n) {
                     const double* col = data.A_T.data() + j * data.m;
-                    // Вкладений parallel_reduce замість SIMD скалярного добутку
-                    v_Aj = tbb::parallel_reduce(
-                        tbb::blocked_range<int>(0, data.m),
-                        0.0,
-                        [&](const tbb::blocked_range<int>& inner_r, double inner_sum) {
-                            for (int i = inner_r.begin(); i < inner_r.end(); ++i)
-                                inner_sum += v[i] * col[i];
-                            return inner_sum;
-                        },
-                        std::plus<double>()
-                    );
+
+                    inner_arenas[th_idx].execute([&]() {
+                        v_Aj = tbb::parallel_reduce(
+                            tbb::blocked_range<int>(0, data.m),
+                            0.0,
+                            [&](const tbb::blocked_range<int>& inner_r, double inner_sum) {
+                                for (int i = inner_r.begin(); i < inner_r.end(); ++i)
+                                    inner_sum += v[i] * col[i];
+                                return inner_sum;
+                            },
+                            std::plus<double>()
+                        );
+                    });
                 } else {
                     v_Aj = v[j - data.n];
                 }
@@ -236,21 +254,26 @@ int ParallelSimplex::computeJPivot(std::pair<double, int> identity, InnerFn&& in
 void ParallelSimplex::computeVectorD(std::vector<double>& d) {
     tbb::parallel_for(tbb::blocked_range<int>(0, data.m),
         [&](const tbb::blocked_range<int>& r) {
+
+            int th_idx = tbb::this_task_arena::current_thread_index();
+
             if (j_pivot < data.n) {
                 const double* col = data.A_T.data() + j_pivot * data.m;
                 for (int i = r.begin(); i < r.end(); ++i) {
                     const double* row = data.B_m1.data() + i * data.m;
-                    // Вкладена редукція для обчислення d[i]
-                    d[i] = tbb::parallel_reduce(
-                        tbb::blocked_range<int>(0, data.m),
-                        0.0,
-                        [&](const tbb::blocked_range<int>& inner_r, double inner_sum) {
-                            for (int j = inner_r.begin(); j < inner_r.end(); ++j)
-                                inner_sum += row[j] * col[j];
-                            return inner_sum;
-                        },
-                        std::plus<double>()
-                    );
+
+                    inner_arenas[th_idx].execute([&]() {
+                        d[i] = tbb::parallel_reduce(
+                            tbb::blocked_range<int>(0, data.m),
+                            0.0,
+                            [&](const tbb::blocked_range<int>& inner_r, double inner_sum) {
+                                for (int j = inner_r.begin(); j < inner_r.end(); ++j)
+                                    inner_sum += row[j] * col[j];
+                                return inner_sum;
+                            },
+                            std::plus<double>()
+                        );
+                    });
                 }
             } else {
                 int target_col = j_pivot - data.n;
@@ -278,7 +301,7 @@ void ParallelSimplex::performBasisUpdate(const std::vector<double>& d, int ip, i
     SimplexMath::UpdateMatrixAndVectorParallel(
         data.B_m1_iPiv, d, data.d_ipRev.value,
         data.B_m1, data.x_B_iPiv.value, data.x_B,
-        data.m, data.m, ip
+        data.m, data.m, ip,  inner_arenas
     );
 }
 
