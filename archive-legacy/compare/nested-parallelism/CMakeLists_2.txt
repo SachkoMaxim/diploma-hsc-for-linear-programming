@@ -32,7 +32,7 @@ target_link_libraries(diploma_hsc_for_linear_programming PRIVATE
 )
 
 if(MSVC)
-    target_compile_options(diploma_hsc_for_linear_programming PRIVATE /O2 /arch:AVX2 /fp:fast /Qpar)
+    target_compile_options(diploma_hsc_for_linear_programming PRIVATE /O2 /fp:fast /Qvec-)
 else()
-    target_compile_options(diploma_hsc_for_linear_programming PRIVATE -O3 -march=native -ffast-math -fopenmp-simd)
+    target_compile_options(diploma_hsc_for_linear_programming PRIVATE -O3 -march=native -ffast-math -fno-tree-vectorize -Wno-unknown-pragmas)
 endif()

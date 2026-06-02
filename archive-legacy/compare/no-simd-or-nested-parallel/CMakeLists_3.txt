@@ -32,7 +32,10 @@ target_link_libraries(diploma_hsc_for_linear_programming PRIVATE
 )
 
 if(MSVC)
-    target_compile_options(diploma_hsc_for_linear_programming PRIVATE /O2 /arch:AVX2 /fp:fast /Qpar)
+    # /Qvec- ПРИМУСОВО вимикає автовекторизацію в MSVC
+    target_compile_options(diploma_hsc_for_linear_programming PRIVATE /O2 /fp:fast /Qvec-)
 else()
-    target_compile_options(diploma_hsc_for_linear_programming PRIVATE -O3 -march=native -ffast-math -fopenmp-simd)
+    # -fno-tree-vectorize ЗАБОРОНЯЄ компіляторам GCC/Clang генерувати SIMD інструкції
+    # -Wno-unknown-pragmas приховує попередження, якщо у коді десь залишаться прагми simd
+    target_compile_options(diploma_hsc_for_linear_programming PRIVATE -O3 -march=native -ffast-math -fno-tree-vectorize -Wno-unknown-pragmas)
 endif()
