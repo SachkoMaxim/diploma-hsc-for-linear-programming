@@ -16,13 +16,7 @@ ParallelSimplex::ParallelSimplex(SharedData& data_, int numThreads_, int maxIter
 }
 
 SimplexStatus ParallelSimplex::solve() {
-    omp_set_nested(1);
-    omp_set_max_active_levels(2);
-
-    SimplexStatus status = SimplexStatus::OPTIMAL;
-
-    arena.execute([&]() {
-
+    return arena.execute([&]() -> SimplexStatus {
         tbb::parallel_invoke(
             // T1: Введення A
             [&]() { data.putValuesIntoA_T(data.A_T, -20.0, 20.0, seed); },
@@ -69,7 +63,7 @@ SimplexStatus ParallelSimplex::solve() {
                 // u = B_m1[i_pivot] * A
                 data.saveRow(data.B_m1_iPiv, i_pivot);
                 SimplexMath::MultiplyRowAndTransposedMatrix(
-                    data.B_m1_iPiv, data.A_T, u, data.m, data.n + data.m, P
+                    data.B_m1_iPiv, data.A_T, u, data.m, data.n + data.m
                 );
 
                 // Обчислення1-4: v та j_pivot для двоїстого критерію
@@ -85,8 +79,7 @@ SimplexStatus ParallelSimplex::solve() {
 
                 if (j_pivot == -1) {
                     std::cout << "Problem is INFEASIBLE (no dual pivot column).\n";
-                    status = SimplexStatus::INFEASIBLE;
-                    return;
+                    return SimplexStatus::INFEASIBLE;
                 }
 
                 // Обчислення5: d = B^-1 * A[j_pivot]
@@ -100,8 +93,6 @@ SimplexStatus ParallelSimplex::solve() {
             // Відновлення c_TB після повернення оригінальної цільової функції
             restoreCTB();
         }
-
-        if (status != SimplexStatus::OPTIMAL) return;
 
         // Пряма фаза: рух до максимуму цільової функції
         while (iterations < maxIter) {
@@ -130,8 +121,7 @@ SimplexStatus ParallelSimplex::solve() {
             i_pivot = harrisRatioPivot(d);
             if (i_pivot == -1) {
                 std::cout << "Objective function is unbounded.\n";
-                status = SimplexStatus::UNBOUNDED;
-                return;
+                return SimplexStatus::UNBOUNDED;
             }
 
             // Обчислення8-12: оновлення базису
@@ -140,8 +130,7 @@ SimplexStatus ParallelSimplex::solve() {
 
         if (iterations >= maxIter) {
             std::cout << "Iteration limit reached.\n";
-            status = SimplexStatus::MAX_ITER;
-            return;
+            return SimplexStatus::MAX_ITER;
         }
 
         // Збір розв'язку
@@ -156,9 +145,8 @@ SimplexStatus ParallelSimplex::solve() {
         for (int i = 0; i < data.m; ++i)
             result += v[i] * data.b[i];
 
+        return SimplexStatus::OPTIMAL;
     }); // кінець arena.execute - потоки вивільняються тут
-
-    return status;
 }
 
 void ParallelSimplex::computeVectorV() {
@@ -233,23 +221,26 @@ int ParallelSimplex::computeJPivot(std::pair<double, int> identity, InnerFn&& in
 
 void ParallelSimplex::computeVectorD(std::vector<double>& d) {
     //Обчислення5 d = B_m1 * A(j_pivot)н
-    if (j_pivot < data.n) {
-        const double* col = data.A_T.data() + j_pivot * data.m;
-#pragma omp parallel for schedule(static) num_threads(P)
-        for (int i = 0; i < data.m; ++i) {
-            double sum = 0.0;
-            const double* row = data.B_m1.data() + i * data.m;
-
-            for (int j = 0; j < data.m; ++j)
-                sum += row[j] * col[j];
-            d[i] = sum;
+    tbb::parallel_for(tbb::blocked_range<int>(0, data.m),
+        [&](const tbb::blocked_range<int>& r) {
+            if (j_pivot < data.n) {
+                const double* col = data.A_T.data() + j_pivot * data.m;
+                for (int i = r.begin(); i < r.end(); ++i) {
+                    double sum = 0.0;
+                    const double* row = data.B_m1.data() + i * data.m;
+#pragma omp simd reduction(+:sum)
+                    for (int j = 0; j < data.m; ++j)
+                        sum += row[j] * col[j];
+                    d[i] = sum;
+                }
+            } else {
+                int target_col = j_pivot - data.n;
+                for (int i = r.begin(); i < r.end(); ++i) {
+                    d[i] = data.B_m1[i * data.m + target_col];
+                }
+            }
         }
-    } else {
-        const int target_col = j_pivot - data.n;
-#pragma omp parallel for schedule(static) num_threads(P)
-        for (int i = 0; i < data.m; ++i)
-            d[i] = data.B_m1[i * data.m + target_col];
-    }
+    );
 }
 
 void ParallelSimplex::performBasisUpdate(const std::vector<double>& d, int ip, int jp) {
@@ -268,7 +259,7 @@ void ParallelSimplex::performBasisUpdate(const std::vector<double>& d, int ip, i
     SimplexMath::UpdateMatrixAndVectorParallel(
         data.B_m1_iPiv, d, data.d_ipRev.value,
         data.B_m1, data.x_B_iPiv.value, data.x_B,
-        data.m, data.m, ip, P
+        data.m, data.m, ip
     );
 }
 
@@ -277,13 +268,19 @@ int ParallelSimplex::harrisRatioPivot(const std::vector<double>& d) const {
     constexpr double pivot_threshold = 1e-6;
 
     // Прохід 1: мінімально допустимий крок theta_min
-    double theta_min = std::numeric_limits<double>::max();
-#pragma omp parallel for schedule(static) num_threads(P) reduction(min:theta_min)
-    // Обчислення6 ii = min((x_B)н / dн)
-    for (int i = 0; i < data.m; ++i) {
-        if (d[i] > pivot_threshold)
-            theta_min = std::min(theta_min, (data.x_B[i] + harris_eps) / d[i]);
-    }
+    const double theta_min = tbb::parallel_reduce(
+        tbb::blocked_range<int>(0, data.m),
+        std::numeric_limits<double>::max(),
+        // Обчислення6 ii = min((x_B)н / dн)
+        [&](const tbb::blocked_range<int>& r, double local_min) {
+            for (int i = r.begin(); i < r.end(); ++i) {
+                if (d[i] > pivot_threshold)
+                    local_min = std::min(local_min, (data.x_B[i] + harris_eps) / d[i]);
+            }
+            return local_min;
+        },
+        [](double a, double b) { return std::min(a, b); }
+    );
 
     if (theta_min == std::numeric_limits<double>::max()) return -1; // задача необмежена
 
@@ -338,9 +335,10 @@ int ParallelSimplex::computeIPivotForDual() const {
 }
 
 void ParallelSimplex::restoreCTB() {
-#pragma omp parallel for schedule(static) num_threads(P)
-    for (int i = 0; i < data.m; ++i) {
-        const int idx = data.basisIdx[i];
-        data.c_TB[i] = (idx < data.n) ? data.c[idx] : 0.0;
-    }
+    tbb::parallel_for(tbb::blocked_range<int>(0, data.m), [&](const tbb::blocked_range<int>& r) {
+        for (int i = r.begin(); i < r.end(); ++i) {
+            const int idx = data.basisIdx[i];
+            data.c_TB[i] = (idx < data.n) ? data.c[idx] : 0.0;
+        }
+    });
 }
